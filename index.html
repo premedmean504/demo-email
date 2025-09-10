@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crescendo Mail — Live Demo</title>
+  <style>
+    :root {
+      --ink: #0a0a0e;
+      --panel: #121225;
+      --panel-2: #0f0f1f;
+      --text: #e9e9f1;
+      --muted: #a9a9c6;
+      --accent: #c7ff59;
+      --bubble-user: rgba(140,120,255,.9);
+      --bubble-assistant: rgba(255,255,255,.08);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%; margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      color: var(--text);
+      background:
+        radial-gradient(900px 600px at 85% 20%, rgba(159,125,255,.18), transparent),
+        radial-gradient(1000px 700px at 10% 0%, rgba(111,60,255,.22), transparent),
+        linear-gradient(180deg, var(--panel-2), var(--ink));
+      overflow-y: auto;
+    }
+    .topbar { display: flex; align-items: center; gap: 12px; max-width: 1100px; margin: 18px auto 0; padding: 0 16px; }
+    .badge { background: var(--accent); color: #111; font-weight: 700; border-radius: 999px; padding: 4px 10px; }
+    .thread { max-width: 1100px; margin: 16px auto; padding: 0 16px 120px; min-height: 280px; }
+    .msg { max-width: 70%; margin: 12px 0; padding: 14px 16px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+    .msg.user { margin-left: auto; background: var(--bubble-user); color: #fff; border-bottom-right-radius: 6px; }
+    .msg.assistant { margin-right: auto; background: var(--bubble-assistant); color: #eaeaea; border-bottom-left-radius: 6px; }
+    .timestamp { font-size: 12px; opacity: .6; margin: 4px 8px; }
+    .composer-wrap { position: sticky; bottom: 0; background: linear-gradient(180deg, rgba(10,10,14,0), rgba(10,10,14,0.8) 22%, rgba(10,10,14,1) 40%); padding-top: 18px; }
+    .composer { max-width: 1100px; margin: 0 auto 24px; padding: 12px 16px; background: #0d0d1b; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; display: grid; gap: 10px; }
+    .row { display: grid; grid-template-columns: 92px 1fr 92px 1fr; gap: 10px; align-items: center; }
+    .row > label { color: var(--muted); font-size: 13px; }
+    input, textarea { width: 100%; background: #0b0b17; color: var(--text); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; font: inherit; }
+    textarea { min-height: 120px; resize: vertical; }
+    .actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+    button { appearance: none; border: 0; cursor: pointer; font: inherit; padding: 10px 16px; border-radius: 999px; font-weight: 700; }
+    #new-thread { background: #1e1e35; color: var(--text); }
+    #send { background: var(--accent); color: #111; }
+    .hint { color: var(--muted); font-size: 12px; text-align: right; }
+    .status-dot { width:10px; height:10px; border-radius:999px; display:inline-block; margin-right:6px; background:#777; vertical-align:middle; }
+    .status { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div style="font-weight:800; letter-spacing:.12em;">CRESCENDO</div>
+    <span class="badge">AI Mail</span>
+    <div id="subjectPill" class="badge" style="background:#16162a; color:#dfe2ff; font-weight:600;">(no subject)</div>
+    <div style="margin-left:auto" class="status"><span id="statusDot" class="status-dot"></span><span id="statusText">idle</span></div>
+  </div>
+
+  <div id="thread" class="thread"></div>
+
+  <div class="composer-wrap">
+    <form class="composer" id="composerForm">
+      <div class="row">
+        <label for="to">To</label>
+        <input id="to" name="to" type="email" placeholder="assistant@yourdomain.com" />
+        <label for="subject">Subject</label>
+        <input id="subject" name="subject" type="text" placeholder="Refund / Order issue…" />
+      </div>
+      <div>
+        <textarea id="body" name="body" placeholder="Type your message…"></textarea>
+      </div>
+      <div class="actions">
+        <button id="new-thread" type="button">New thread</button>
+        <button id="send" type="submit">Send</button>
+      </div>
+      <div class="hint" id="statusHint"></div>
+    </form>
+  </div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const threadEl = $('#thread');
+    const subjectPill = $('#subjectPill');
+    const statusHint = $('#statusHint');
+    const statusDot = $('#statusDot');
+    const statusText = $('#statusText');
+    const toInput = $('#to');
+    const subjectInput = $('#subject');
+    const bodyInput = $('#body');
+    const sendBtn = $('#send');
+    const newThreadBtn = $('#new-thread');
+    const form = $('#composerForm');
+
+    window.__msgs = window.__msgs || [];
+
+    function setStatus(state) {
+      const colors = { idle:'#777', sending:'#f6c000', polling:'#00bcd4', ok:'#73e091', error:'#ff6b6b' };
+      statusDot.style.background = colors[state] || '#777';
+      statusText.textContent = state;
+    }
+
+    function getThreadId() {
+      const u = new URL(location.href);
+      return u.searchParams.get('t') || '';
+    }
+    function setThreadId(id) {
+      const u = new URL(location.href);
+      if (id) u.searchParams.set('t', id); else u.searchParams.delete('t');
+      history.replaceState({}, '', u.toString());
+    }
+    function ensureThreadId() {
+      let id = getThreadId();
+      if (!id) {
+        id = Math.random().toString(36).slice(2, 12);
+        setThreadId(id);
+      }
+      return id;
+    }
+
+    function normalize(items) {
+      return (items || []).map(m => ({
+        id: m.id,
+        role: m.role || (m.dir === 'sent' ? 'user' : 'assistant'),
+        text: m.text || m.body || '',
+        ts: m.ts || m.date || ''
+      }));
+    }
+
+    function dedupeAndSort(list) {
+      const map = new Map();
+      list.forEach(m => {
+        const key = m.id || `${m.role}::${m.text}::${m.ts || ''}`;
+        if (!map.has(key)) map.set(key, m);
+      });
+      const out = Array.from(map.values());
+      out.sort((a,b) => new Date(a.ts || 0) - new Date(b.ts || 0));
+      return out;
+    }
+
+    function renderMessages(items) {
+      const msgs = normalize(items);
+      threadEl.innerHTML = '';
+      msgs.forEach(m => {
+        const bubble = document.createElement('div');
+        bubble.className = `msg ${m.role === 'user' ? 'user' : 'assistant'}`;
+        bubble.textContent = m.text || '(no body)';
+        threadEl.appendChild(bubble);
+        if (m.ts) {
+          const t = document.createElement('div');
+          t.className = 'timestamp';
+          t.style.textAlign = m.role === 'user' ? 'right' : 'left';
+          t.textContent = new Date(m.ts).toLocaleString();
+          threadEl.appendChild(t);
+        }
+      });
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    let pollTimer = null;
+    let pollInFlight = false;
+
+    async function pollThread() {
+      if (pollInFlight) return; // avoid overlaps
+      pollInFlight = true;
+
+      const id = getThreadId();
+      if (!id) { pollInFlight = false; return; }
+
+      setStatus('polling');
+
+      try {
+        // abort stalled fetches after 8s
+        const ctrl = new AbortController();
+        const kill = setTimeout(() => ctrl.abort(), 8000);
+
+        const res = await fetch(`/.netlify/functions/thread?id=${encodeURIComponent(id)}`, { signal: ctrl.signal });
+        clearTimeout(kill);
+
+        // Read as text first; then try JSON so non-JSON errors don't crash the UI
+        const payload = await res.text();
+        let data;
+        try {
+          data = JSON.parse(payload);
+        } catch {
+          console.warn('thread: non-JSON response (likely timeout/error):', payload.slice(0, 200));
+          setStatus('error');
+          return;
+        }
+
+        const serverMsgs = normalize(data);
+        window.__msgs = dedupeAndSort([...(window.__msgs || []), ...serverMsgs]);
+        renderMessages(window.__msgs);
+        setStatus('ok');
+      } catch (e) {
+        console.warn('thread fetch failed:', e?.message || e);
+        setStatus('error');
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    function startPolling() {
+      clearInterval(pollTimer);
+      const base = 10000;                  // 10s
+      const jitter = 2500 * Math.random(); // + up to 2.5s
+      pollTimer = setInterval(pollThread, base + jitter);
+      pollThread();
+    }
+
+    function syncSubjectPill() {
+      const s = subjectInput.value.trim();
+      subjectPill.textContent = s ? s : '(no subject)';
+    }
+
+    async function sendEmail(ev) {
+      ev?.preventDefault?.();
+
+      const threadId = ensureThreadId();
+      const to = toInput.value.trim();
+      const subject = subjectInput.value.trim();
+      const body = bodyInput.value.trim();
+
+      syncSubjectPill();
+
+      if (!to || !subject || !body) {
+        statusHint.textContent = 'Fill To, Subject, and Message.';
+        return;
+      }
+
+      statusHint.textContent = 'Sending…';
+      setStatus('sending');
+      try {
+        const res = await fetch('/.netlify/functions/send-email', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to, subject, body, threadId }),
+        });
+        const out = await res.json();
+        if (!res.ok || !out.ok) throw new Error(out.error || 'Send failed');
+
+        const now = new Date().toISOString();
+        const localMsg = { role:'user', text: body, ts: now };
+        window.__msgs = dedupeAndSort([...(window.__msgs || []), localMsg]);
+        renderMessages(window.__msgs);
+
+        bodyInput.value = '';
+        statusHint.textContent = 'Sent ✓';
+        setStatus('ok');
+      } catch (e) {
+        console.error('send failed:', e);
+        statusHint.textContent = 'Send failed: ' + e.message;
+        setStatus('error');
+      }
+    }
+
+    function handleNewThread(ev) {
+      ev?.preventDefault?.();
+      setThreadId('');
+      ensureThreadId();
+      window.__msgs = [];
+      renderMessages(window.__msgs);
+      statusHint.textContent = '';
+      syncSubjectPill();
+      setStatus('idle');
+    }
+
+    form.addEventListener('submit', sendEmail);
+    sendBtn.addEventListener('click', sendEmail);
+    newThreadBtn.addEventListener('click', handleNewThread);
+    subjectInput.addEventListener('input', syncSubjectPill);
+
+    ensureThreadId();
+    syncSubjectPill();
+    startPolling();
+  </script>
+</body>
+</html>
