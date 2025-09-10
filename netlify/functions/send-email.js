@@ -1,39 +1,45 @@
 // netlify/functions/send-email.js
-const nodemailer = require("nodemailer");
+import nodemailer from "nodemailer";
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return json(405, { error: "Method not allowed" });
+export default async (req) => {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ ok: false, error: "POST only" }), { status: 405 });
   }
 
   try {
-    const { to, subject, text } = JSON.parse(event.body || "{}");
-    if (!to || !subject || !text) return json(400, { error: "Missing fields" });
+    const { to, subject, body, threadId } = await req.json();
 
-    const {
-      SMTP_HOST, SMTP_PORT, SMTP_SECURE,
-      SMTP_USER, SMTP_PASS, FROM_EMAIL, REPLY_TO
-    } = process.env;
+    // ✅ Only require to, subject, and body
+    if (!to || !subject || !body) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing fields" }), { status: 400 });
+    }
 
+    // Build transporter from env vars
     const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT),
-      secure: String(SMTP_SECURE) === "true",
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: !!process.env.SMTP_SECURE,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
     });
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to, subject, text,
-      replyTo: REPLY_TO || FROM_EMAIL,
+    // Add a thread tag only if provided
+    const threadTag = threadId ? `[t:${threadId}]` : "";
+    const finalSubject = threadTag ? `${subject} ${threadTag}` : subject;
+
+    const info = await transporter.sendMail({
+      from: process.env.FROM_EMAIL,
+      to,
+      subject: finalSubject,
+      text: body,
+      headers: threadId ? { "X-Thread-Id": threadId } : {},
+      replyTo: process.env.REPLY_TO || process.env.FROM_EMAIL,
     });
 
-    return json(200, { ok: true });
+    return new Response(JSON.stringify({ ok: true, messageId: info.messageId }), { status: 200 });
   } catch (e) {
-    return json(500, { error: String(e.message || e) });
+    return new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500 });
   }
 };
-
-function json(status, body) {
-  return { statusCode: status, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
-}
