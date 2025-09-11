@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "nodemailer": "^6.9.0",
-    "@netlify/blobs": "^6.0.0"
+    "@netlify/blobs": "^6.0.0",
+    "mailparser": "^3.6.5"
   }
 }

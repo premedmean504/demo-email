@@ -1,32 +1,15 @@
 [build]
-  # Serve static files from the project root
+  # directory for your static site (adjust if your index.html is somewhere else)
   publish = "."
-  # Directory where your Netlify Functions live
+  # where your serverless functions are
   functions = "netlify/functions"
 
 [functions]
-  # Use esbuild for bundling
+  # optionally set a Node.js runtime version
   node_bundler = "esbuild"
-  # Make sure these modules are bundled (needed for send-email + inbound logging)
-  external_node_modules = ["nodemailer", "@netlify/blobs"]
-
-# Optional but useful: allows you to POST directly to /inbound
-[[redirects]]
-  from = "/inbound"
-  to = "/.netlify/functions/inbound"
-  status = 200
-  force = true
-
-# You can add more redirects for other functions if you like:
-# e.g. send-email and thread
-[[redirects]]
-  from = "/send-email"
-  to = "/.netlify/functions/send-email"
-  status = 200
-  force = true
+  external_node_modules = ["nodemailer", "mailparser"]
 
 [[redirects]]
-  from = "/thread"
-  to = "/.netlify/functions/thread"
+  from = "/.netlify/functions/*"
+  to = "/.netlify/functions/:splat"
   status = 200
-  force = true

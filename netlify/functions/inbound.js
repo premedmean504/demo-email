@@ -1,89 +1,48 @@
 // netlify/functions/inbound.js
-import { getStore } from "@netlify/blobs";
+import { simpleParser } from 'mailparser'
 
-// Small helpers
-const firstEmail = (v = "") => {
-  // Extract first email from "Name <email@host>" or comma-separated lists
-  const parts = String(v).split(",")[0].trim();
-  const m = parts.match(/<([^>]+)>/);
-  return (m ? m[1] : parts).toLowerCase();
-};
-
-const nowIso = () => new Date().toISOString();
-
-export default async (req) => {
+export const handler = async (event) => {
   try {
-    // 1) Parse payload (SendGrid posts either JSON or form-data)
-    let payload = null;
-    let contentType = req.headers.get("content-type") || "";
+    // If SendGrid sends JSON, adapt accordingly; for raw MIME use body directly
+    const mime = event.isBase64Encoded ? Buffer.from(event.body, 'base64') : Buffer.from(event.body || '', 'utf8')
+    const mail = await simpleParser(mime)
 
-    if (contentType.includes("application/json")) {
-      payload = await req.json();
-    } else if (contentType.includes("multipart/form-data") || contentType.includes("application/x-www-form-urlencoded")) {
-      const form = await req.formData();
-      payload = Object.fromEntries([...form.entries()]);
-      // Some SendGrid fields inside form-data can be JSON strings; attempt to parse known ones
-      for (const k of ["headers", "dkim", "spam_report", "envelope", "charsets", "spf"]) {
-        if (payload[k] && typeof payload[k] === "string") {
-          try { payload[k] = JSON.parse(payload[k]); } catch {/* keep as string */}
-        }
-      }
-    } else {
-      // Fallback: try JSON, else read text
-      try { payload = await req.json(); }
-      catch { payload = { raw: await req.text() }; }
+    // Try to recover thread id
+    const threadId =
+      mail.headers.get('x-thread-id') ||
+      firstRefId(mail.headers.get('references')) ||
+      mail.headers.get('in-reply-to') ||
+      'unknown'
+
+    const msg = {
+      id: mail.messageId || Date.now().toString(),
+      from: `${mail.from?.text || 'unknown'}`,
+      text: mail.text || '',
+      html: mail.html || '',
+      date: mail.date ? mail.date.toISOString() : new Date().toISOString()
     }
 
-    // 2) Normalize common fields
-    const from = payload.from || (payload.headers?.from) || "";
-    const to = payload.to || (payload.headers?.to) || "";
-    const subject = payload.subject || (payload.headers?.subject) || "";
-    const text = payload.text || payload["text/plain"] || "";
-    const html = payload.html || payload["text/html"] || "";
-    const headers = payload.headers || {};
-
-    // 3) Pick a thread key
-    //    Strategy: use the first "to" address (e.g., reply@inbound.lat).
-    //    If missing, fall back to subject; if still missing, use "misc".
-    let threadKey = firstEmail(to);
-    if (!threadKey) {
-      const s = String(subject || "").trim().toLowerCase().replace(/\s+/g, "-").slice(0, 64);
-      threadKey = s || "misc";
-    }
-
-    // 4) Shape the message we store
-    const message = {
-      receivedAt: nowIso(),
-      from,
-      to,
-      subject,
-      text,
-      html,
-      headers,
-      // Raw envelope/SPF/DKIM if present (not required)
-      dkim: payload.dkim ?? null,
-      spf: payload.spf ?? null,
-      envelope: payload.envelope ?? null,
-      spam_report: payload.spam_report ?? null,
-    };
-
-    // 5) Save to Netlify Blobs
-    const store = await getStore("threads-store"); // namespace; appears in Netlify → Storage → Blobs
-    const key = `threads/${threadKey}/${Date.now()}.json`;
-    await store.set(key, JSON.stringify(message));
-
-    // 6) Light logging (safe)
-    console.log(`[inbound] saved ${key} from=${firstEmail(from)} subject="${subject}"`);
-
-    return new Response(JSON.stringify({ ok: true, key, thread: threadKey }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    console.error("Inbound error:", err);
-    return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    await saveToBlobs(threadId, msg)
+    return json(200, { ok: true })
+  } catch (e) {
+    console.error(e)
+    return json(500, { error: 'parse failed' })
   }
-};
+}
+
+function firstRefId(refs) {
+  if (!refs) return null
+  const s = Array.isArray(refs) ? refs[0] : String(refs)
+  return s?.trim() || null
+}
+
+const json = (s, b) => ({ statusCode: s, body: JSON.stringify(b), headers: { 'content-type': 'application/json' } })
+async function saveToBlobs(threadId, msg) {
+  const { Blobs } = await import('@netlify/blobs')
+  const store = new Blobs({ token: process.env.NETLIFY_BLOBS_TOKEN, siteID: process.env.SITE_ID })
+  const key = `threads/${threadId}.json`
+  const existing = (await store.get(key)) ? JSON.parse(await store.get(key).text()) : []
+  // de-dupe by id
+  if (!existing.some(m => m.id === msg.id)) existing.push(msg)
+  await store.set(key, JSON.stringify(existing))
+}

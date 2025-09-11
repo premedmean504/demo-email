@@ -1,277 +1,281 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Crescendo Mail — Live Demo</title>
+  <title>AI Email Assistant – In‑Page Chat</title>
   <style>
-    :root {
-      --ink: #0a0a0e;
-      --panel: #121225;
-      --panel-2: #0f0f1f;
-      --text: #e9e9f1;
-      --muted: #a9a9c6;
-      --accent: #c7ff59;
-      --bubble-user: rgba(140,120,255,.9);
-      --bubble-assistant: rgba(255,255,255,.08);
+    :root{
+      --bg:#0b0f14;           /* page background */
+      --panel:#121820;        /* cards/panels */
+      --muted:#202938;        /* borders/lines */
+      --text:#e8eef6;         /* main text */
+      --sub:#93a1b5;          /* secondary */
+      --me:#2c7be5;           /* user bubble */
+      --assistant:#8b5cf6;    /* assistant bubble */
+      --err:#ff5a6a;
     }
-    * { box-sizing: border-box; }
-    html, body {
-      height: 100%; margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      color: var(--text);
-      background:
-        radial-gradient(900px 600px at 85% 20%, rgba(159,125,255,.18), transparent),
-        radial-gradient(1000px 700px at 10% 0%, rgba(111,60,255,.22), transparent),
-        linear-gradient(180deg, var(--panel-2), var(--ink));
-      overflow-y: auto;
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:linear-gradient(180deg, #0b0f14 0%, #0b0f14 60%, #0d1420 100%);
+      color:var(--text);
+      font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
-    .topbar { display: flex; align-items: center; gap: 12px; max-width: 1100px; margin: 18px auto 0; padding: 0 16px; }
-    .badge { background: var(--accent); color: #111; font-weight: 700; border-radius: 999px; padding: 4px 10px; }
-    .thread { max-width: 1100px; margin: 16px auto; padding: 0 16px 120px; min-height: 280px; }
-    .msg { max-width: 70%; margin: 12px 0; padding: 14px 16px; border-radius: 16px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
-    .msg.user { margin-left: auto; background: var(--bubble-user); color: #fff; border-bottom-right-radius: 6px; }
-    .msg.assistant { margin-right: auto; background: var(--bubble-assistant); color: #eaeaea; border-bottom-left-radius: 6px; }
-    .timestamp { font-size: 12px; opacity: .6; margin: 4px 8px; }
-    .composer-wrap { position: sticky; bottom: 0; background: linear-gradient(180deg, rgba(10,10,14,0), rgba(10,10,14,0.8) 22%, rgba(10,10,14,1) 40%); padding-top: 18px; }
-    .composer { max-width: 1100px; margin: 0 auto 24px; padding: 12px 16px; background: #0d0d1b; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; display: grid; gap: 10px; }
-    .row { display: grid; grid-template-columns: 92px 1fr 92px 1fr; gap: 10px; align-items: center; }
-    .row > label { color: var(--muted); font-size: 13px; }
-    input, textarea { width: 100%; background: #0b0b17; color: var(--text); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px 12px; font: inherit; }
-    textarea { min-height: 120px; resize: vertical; }
-    .actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
-    button { appearance: none; border: 0; cursor: pointer; font: inherit; padding: 10px 16px; border-radius: 999px; font-weight: 700; }
-    #new-thread { background: #1e1e35; color: var(--text); }
-    #send { background: var(--accent); color: #111; }
-    .hint { color: var(--muted); font-size: 12px; text-align: right; }
-    .status-dot { width:10px; height:10px; border-radius:999px; display:inline-block; margin-right:6px; background:#777; vertical-align:middle; }
-    .status { font-size: 12px; color: var(--muted); }
+    .app{
+      height:100%;
+      display:flex; flex-direction:column; gap:12px;
+      max-width:880px; margin:0 auto; padding:18px 16px 22px;
+    }
+    header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 14px; background:var(--panel); border:1px solid var(--muted);
+      border-radius:14px;
+      position:sticky; top:12px; z-index:3;
+      backdrop-filter: blur(6px);
+    }
+    header h1{font-size:16px; margin:0; letter-spacing:.2px}
+    header .pill{
+      font-size:12px; color:var(--sub); background:#0f1520; border:1px solid var(--muted);
+      padding:6px 10px; border-radius:999px;
+    }
+    #statusBar{font-size:12px; color:var(--sub)}
+
+    .chat{
+      flex:1; min-height:0;
+      background:var(--panel); border:1px solid var(--muted); border-radius:16px;
+      padding:14px; display:flex; flex-direction:column; gap:12px;
+      overflow:auto; scroll-behavior:smooth;
+    }
+    .msg{
+      display:flex; gap:10px; align-items:flex-end; max-width:78%;
+      animation:fade .2s ease-in;
+    }
+    .msg.right{margin-left:auto; justify-content:flex-end}
+    .avatar{width:28px; height:28px; border-radius:50%; flex:0 0 28px; background:#1a2232; display:flex; align-items:center; justify-content:center; color:#c9d6ea; font-size:12px; border:1px solid var(--muted)}
+    .bubble{
+      padding:10px 12px; border-radius:14px; word-wrap:break-word; white-space:pre-wrap;
+      border:1px solid transparent;
+    }
+    .me .bubble{ background:rgba(44,123,229,.18); border-color:#244a7b }
+    .assistant .bubble{ background:rgba(139,92,246,.18); border-color:#3b2a69 }
+    .meta{ font-size:11px; color:var(--sub); margin-top:4px }
+
+    @keyframes fade{ from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none} }
+
+    .composer{
+      display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end;
+      background:var(--panel); border:1px solid var(--muted); border-radius:16px; padding:12px;
+      position:sticky; bottom:0; z-index:3;
+    }
+    textarea{
+      width:100%; resize:none; min-height:54px; max-height:180px; padding:12px 12px 10px 12px;
+      border-radius:12px; border:1px solid var(--muted); background:#0f1520; color:var(--text);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+      outline:none;
+    }
+    textarea:focus{ border-color:#2c7be5 }
+    button{
+      height:40px; padding:0 16px; border-radius:12px; border:1px solid var(--muted);
+      background:#182238; color:#e9effb; cursor:pointer; font-weight:600;
+    }
+    button:disabled{ opacity:.6; cursor:not-allowed }
+
+    .hint{ color:var(--sub); font-size:12px; text-align:center }
+    .error{ color:var(--err) }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div style="font-weight:800; letter-spacing:.12em;">CRESCENDO</div>
-    <span class="badge">AI Mail</span>
-    <div id="subjectPill" class="badge" style="background:#16162a; color:#dfe2ff; font-weight:600;">(no subject)</div>
-    <div style="margin-left:auto" class="status"><span id="statusDot" class="status-dot"></span><span id="statusText">idle</span></div>
-  </div>
-
-  <div id="thread" class="thread"></div>
-
-  <div class="composer-wrap">
-    <form class="composer" id="composerForm">
-      <div class="row">
-        <label for="to">To</label>
-        <input id="to" name="to" type="email" placeholder="assistant@yourdomain.com" />
-        <label for="subject">Subject</label>
-        <input id="subject" name="subject" type="text" placeholder="Refund / Order issue…" />
-      </div>
+  <div class="app">
+    <header>
+      <h1>AI Email Assistant</h1>
       <div>
-        <textarea id="body" name="body" placeholder="Type your message…"></textarea>
+        <span id="statusBar">Ready</span>
+        <span class="pill" id="threadPill">thread: –</span>
       </div>
-      <div class="actions">
-        <button id="new-thread" type="button">New thread</button>
-        <button id="send" type="submit">Send</button>
-      </div>
-      <div class="hint" id="statusHint"></div>
+    </header>
+
+    <main class="chat" id="chat" aria-live="polite"></main>
+
+    <form class="composer" id="composerForm">
+      <textarea id="composer" placeholder="Type a message for the AI… (Shift+Enter = newline)" spellcheck="true"></textarea>
+      <button id="sendBtn" type="submit">Send</button>
     </form>
+
+    <div class="hint">Replies are fetched from <code>/.netlify/functions/list-thread</code>. Make sure your Netlify functions are deployed.</div>
   </div>
 
   <script>
-    const $ = (sel) => document.querySelector(sel);
-    const threadEl = $('#thread');
-    const subjectPill = $('#subjectPill');
-    const statusHint = $('#statusHint');
-    const statusDot = $('#statusDot');
-    const statusText = $('#statusText');
-    const toInput = $('#to');
-    const subjectInput = $('#subject');
-    const bodyInput = $('#body');
-    const sendBtn = $('#send');
-    const newThreadBtn = $('#new-thread');
-    const form = $('#composerForm');
+    // === Config ===
+    const INBOUND_TO = "stage03@c7odemo1.zendesk.com"; // AI email assistant
+    const SUBJECT = "Demo Assistant Conversation";
 
-    window.__msgs = window.__msgs || [];
+    // === State ===
+    let threadId = loadThreadId();
+    let polling = false;
+    let lastRenderedIds = new Set();
 
-    function setStatus(state) {
-      const colors = { idle:'#777', sending:'#f6c000', polling:'#00bcd4', ok:'#73e091', error:'#ff6b6b' };
-      statusDot.style.background = colors[state] || '#777';
-      statusText.textContent = state;
-    }
+    const chat = document.getElementById('chat');
+    const statusBar = document.getElementById('statusBar');
+    const threadPill = document.getElementById('threadPill');
+    const form = document.getElementById('composerForm');
+    const input = document.getElementById('composer');
+    const sendBtn = document.getElementById('sendBtn');
 
-    function getThreadId() {
-      const u = new URL(location.href);
-      return u.searchParams.get('t') || '';
-    }
-    function setThreadId(id) {
-      const u = new URL(location.href);
-      if (id) u.searchParams.set('t', id); else u.searchParams.delete('t');
-      history.replaceState({}, '', u.toString());
-    }
-    function ensureThreadId() {
-      let id = getThreadId();
-      if (!id) {
-        id = Math.random().toString(36).slice(2, 12);
-        setThreadId(id);
-      }
-      return id;
-    }
+    updateThreadPill();
 
-    function normalize(items) {
-      return (items || []).map(m => ({
-        id: m.id,
-        role: m.role || (m.dir === 'sent' ? 'user' : 'assistant'),
-        text: m.text || m.body || '',
-        ts: m.ts || m.date || ''
-      }));
-    }
-
-    function dedupeAndSort(list) {
-      const map = new Map();
-      list.forEach(m => {
-        const key = m.id || `${m.role}::${m.text}::${m.ts || ''}`;
-        if (!map.has(key)) map.set(key, m);
-      });
-      const out = Array.from(map.values());
-      out.sort((a,b) => new Date(a.ts || 0) - new Date(b.ts || 0));
-      return out;
-    }
-
-    function renderMessages(items) {
-      const msgs = normalize(items);
-      threadEl.innerHTML = '';
-      msgs.forEach(m => {
-        const bubble = document.createElement('div');
-        bubble.className = `msg ${m.role === 'user' ? 'user' : 'assistant'}`;
-        bubble.textContent = m.text || '(no body)';
-        threadEl.appendChild(bubble);
-        if (m.ts) {
-          const t = document.createElement('div');
-          t.className = 'timestamp';
-          t.style.textAlign = m.role === 'user' ? 'right' : 'left';
-          t.textContent = new Date(m.ts).toLocaleString();
-          threadEl.appendChild(t);
-        }
-      });
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    }
-
-    let pollTimer = null;
-    let pollInFlight = false;
-
-    async function pollThread() {
-      if (pollInFlight) return; // avoid overlaps
-      pollInFlight = true;
-
-      const id = getThreadId();
-      if (!id) { pollInFlight = false; return; }
-
-      setStatus('polling');
-
-      try {
-        // abort stalled fetches after 8s
-        const ctrl = new AbortController();
-        const kill = setTimeout(() => ctrl.abort(), 8000);
-
-        const res = await fetch(`/.netlify/functions/thread?id=${encodeURIComponent(id)}`, { signal: ctrl.signal });
-        clearTimeout(kill);
-
-        // Read as text first; then try JSON so non-JSON errors don't crash the UI
-        const payload = await res.text();
-        let data;
-        try {
-          data = JSON.parse(payload);
-        } catch {
-          console.warn('thread: non-JSON response (likely timeout/error):', payload.slice(0, 200));
-          setStatus('error');
-          return;
-        }
-
-        const serverMsgs = normalize(data);
-        window.__msgs = dedupeAndSort([...(window.__msgs || []), ...serverMsgs]);
-        renderMessages(window.__msgs);
-        setStatus('ok');
-      } catch (e) {
-        console.warn('thread fetch failed:', e?.message || e);
-        setStatus('error');
-      } finally {
-        pollInFlight = false;
-      }
-    }
-
-    function startPolling() {
-      clearInterval(pollTimer);
-      const base = 10000;                  // 10s
-      const jitter = 2500 * Math.random(); // + up to 2.5s
-      pollTimer = setInterval(pollThread, base + jitter);
-      pollThread();
-    }
-
-    function syncSubjectPill() {
-      const s = subjectInput.value.trim();
-      subjectPill.textContent = s ? s : '(no subject)';
-    }
-
-    async function sendEmail(ev) {
-      ev?.preventDefault?.();
-
-      const threadId = ensureThreadId();
-      const to = toInput.value.trim();
-      const subject = subjectInput.value.trim();
-      const body = bodyInput.value.trim();
-
-      syncSubjectPill();
-
-      if (!to || !subject || !body) {
-        statusHint.textContent = 'Fill To, Subject, and Message.';
-        return;
-      }
-
-      statusHint.textContent = 'Sending…';
-      setStatus('sending');
-      try {
-        const res = await fetch('/.netlify/functions/send-email', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ to, subject, body, threadId }),
-        });
-        const out = await res.json();
-        if (!res.ok || !out.ok) throw new Error(out.error || 'Send failed');
-
-        const now = new Date().toISOString();
-        const localMsg = { role:'user', text: body, ts: now };
-        window.__msgs = dedupeAndSort([...(window.__msgs || []), localMsg]);
-        renderMessages(window.__msgs);
-
-        bodyInput.value = '';
-        statusHint.textContent = 'Sent ✓';
-        setStatus('ok');
-      } catch (e) {
-        console.error('send failed:', e);
-        statusHint.textContent = 'Send failed: ' + e.message;
-        setStatus('error');
-      }
-    }
-
-    function handleNewThread(ev) {
-      ev?.preventDefault?.();
-      setThreadId('');
-      ensureThreadId();
-      window.__msgs = [];
-      renderMessages(window.__msgs);
-      statusHint.textContent = '';
-      syncSubjectPill();
-      setStatus('idle');
-    }
-
-    form.addEventListener('submit', sendEmail);
-    sendBtn.addEventListener('click', sendEmail);
-    newThreadBtn.addEventListener('click', handleNewThread);
-    subjectInput.addEventListener('input', syncSubjectPill);
-
-    ensureThreadId();
-    syncSubjectPill();
+    // Auto-start polling this thread
     startPolling();
+
+    // === Handlers ===
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = (input.value || '').trim();
+      if (!text) return;
+
+      try {
+        setSending(true);
+        // optimistic UI
+        appendMessage({ id: 'local-' + Date.now(), from: 'You', text, date: new Date().toISOString() }, true);
+
+        // Send email via Netlify function with custom header for threading
+        await fetch('/.netlify/functions/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: INBOUND_TO,
+            subject: SUBJECT,
+            body: text,
+            threadId,
+            headers: { 'X-Thread-Id': threadId } // 👈 custom header passed to serverless
+          })
+        });
+
+        input.value = '';
+        input.focus();
+        // Ensure polling is running
+        startPolling();
+      } catch (err) {
+        console.error(err);
+        showStatus('Send failed', true);
+      } finally {
+        setSending(false);
+      }
+    });
+
+    // Shift+Enter for newline, Enter to send
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendBtn.click();
+      }
+    });
+
+    // === Polling ===
+    function startPolling(){
+      if (polling) return; // already running
+      polling = true;
+      pollOnce();
+    }
+
+    async function pollOnce(){
+      try {
+        const res = await fetch('/.netlify/functions/list-thread?thread=' + encodeURIComponent(threadId), { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const messages = await res.json();
+        renderThread(messages);
+      } catch (e) {
+        console.warn('Polling error:', e);
+        showStatus('Waiting for replies…');
+      } finally {
+        setTimeout(pollOnce, 4000); // every 4s
+      }
+    }
+
+    // === Rendering ===
+    function renderThread(list){
+      if (!Array.isArray(list)) return;
+      // sort by date ascending
+      list.sort((a,b)=> new Date(a.date||0) - new Date(b.date||0));
+      for (const m of list){
+        if (lastRenderedIds.has(m.id)) continue;
+        appendMessage(m, false);
+      }
+      showStatus(list.length ? 'Synced' : 'No messages yet');
+    }
+
+    function appendMessage(m, optimistic){
+      lastRenderedIds.add(m.id);
+      const isAssistant = looksLikeAssistant(m.from);
+      const side = isAssistant ? 'left' : 'right';
+
+      const row = document.createElement('div');
+      row.className = 'msg ' + (isAssistant ? '' : 'right') + ' ' + (isAssistant ? 'assistant' : 'me');
+
+      const avatar = document.createElement('div');
+      avatar.className = 'avatar';
+      avatar.textContent = isAssistant ? 'AI' : 'You';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = (m.text || '').trim();
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = labelFrom(m.from) + ' • ' + fmtTime(m.date);
+
+      const col = document.createElement('div');
+      col.style.maxWidth = '100%';
+      col.appendChild(bubble);
+      col.appendChild(meta);
+
+      if (isAssistant){
+        row.appendChild(avatar);
+        row.appendChild(col);
+      } else {
+        row.appendChild(col);
+        row.appendChild(avatar);
+      }
+
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // === Helpers ===
+    function looksLikeAssistant(from=''){
+      const s = String(from).toLowerCase();
+      return /zendesk\.com|stage\d+@c7odemo1\.zendesk\.com|\bassistant\b/.test(s);
+    }
+    function labelFrom(from=''){
+      if (!from) return 'Unknown';
+      const s = String(from);
+      if (looksLikeAssistant(s)) return 'Assistant';
+      if (/you\b/i.test(s)) return 'You';
+      return s.replace(/<.*?>/g,'').trim();
+    }
+    function fmtTime(d){
+      try{
+        const dt = d ? new Date(d) : new Date();
+        return dt.toLocaleString();
+      }catch{ return '' }
+    }
+    function setSending(on){
+      sendBtn.disabled = on; input.disabled = on;
+      showStatus(on ? 'Sending…' : 'Ready');
+    }
+    function showStatus(msg, isErr){
+      statusBar.textContent = msg; statusBar.className = isErr? 'error':'';
+    }
+    function loadThreadId(){
+      const saved = localStorage.getItem('ai_mail_thread');
+      if (saved) return saved;
+      const t = generateThreadId();
+      localStorage.setItem('ai_mail_thread', t);
+      return t;
+    }
+    function updateThreadPill(){ threadPill.textContent = 'thread: ' + threadId }
+    function generateThreadId(){ return 't-' + Date.now() + '-' + Math.random().toString(36).slice(2,8) }
   </script>
 </body>
 </html>

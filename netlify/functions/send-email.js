@@ -1,57 +1,52 @@
 // netlify/functions/send-email.js
-import nodemailer from "nodemailer";
+import nodemailer from 'nodemailer'
 
-export default async (req) => {
-  if (req.method !== "POST") {
-    return new Response(
-      JSON.stringify({ ok: false, error: "Method not allowed" }),
-      { status: 405 }
-    );
-  }
-
+export const handler = async (event) => {
   try {
-    const { to, subject, body, threadId } = await req.json();
+    const { to, subject, body, headers = {}, threadId } = JSON.parse(event.body || '{}')
+    if (!to || !body) return resp(400, { error: 'to and body required' })
 
-    if (!to || !subject || !body) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Missing required fields" }),
-        { status: 400 }
-      );
-    }
-
-    // ✅ Gmail SMTP transporter
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com", // smtp.gmail.com
-      port: Number(process.env.SMTP_PORT) || 587,      // 587 for STARTTLS
-      secure: String(process.env.SMTP_SECURE) === "true", // false for 587
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      requireTLS: true, // forces STARTTLS on port 587
-    });
-
-    // Add thread ID to subject if provided
-    const threadTag = threadId ? `[t:${threadId}]` : "";
-    const finalSubject = threadTag ? `${subject} ${threadTag}` : subject;
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+    })
 
     const info = await transporter.sendMail({
-      from: process.env.FROM_EMAIL,
+      from: `"AI Mail Demo" <${process.env.GMAIL_USER}>`,
       to,
-      subject: finalSubject,
+      subject,
       text: body,
-      headers: threadId ? { "X-Thread-Id": threadId } : {},
-      replyTo: process.env.REPLY_TO || process.env.FROM_EMAIL,
-    });
+      headers: {
+        'X-Thread-Id': headers['X-Thread-Id'] || threadId || '',
+      },
+      // Pro tip: set Reply-To to your inbound mailbox so Zendesk/assistant replies go there
+      replyTo: process.env.INBOUND_ADDRESS // e.g. reply@inbound.lat
+    })
 
-    return new Response(
-      JSON.stringify({ ok: true, messageId: info.messageId }),
-      { status: 200 }
-    );
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ ok: false, error: err.message }),
-      { status: 500 }
-    );
+    // (optional) also store the outbound message so it shows in UI instantly after reload
+    await saveToBlobs(threadId, {
+      id: info.messageId || Date.now().toString(),
+      from: `You <you@local>`,
+      text: body,
+      date: new Date().toISOString()
+    })
+
+    return resp(200, { ok: true, id: info.messageId })
+  } catch (e) {
+    console.error(e)
+    return resp(500, { error: 'send failed' })
   }
-};
+}
+
+// ---- helpers
+const resp = (s, b) => ({ statusCode: s, body: JSON.stringify(b), headers: { 'content-type': 'application/json' } })
+async function saveToBlobs(threadId, msg) {
+  const { Blobs } = await import('@netlify/blobs')
+  const store = new Blobs({ token: process.env.NETLIFY_BLOBS_TOKEN, siteID: process.env.SITE_ID })
+  const key = `threads/${threadId}.json`
+  const existing = (await store.get(key)) ? JSON.parse(await store.get(key).text()) : []
+  existing.push(msg)
+  await store.set(key, JSON.stringify(existing))
+}
